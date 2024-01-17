@@ -1,0 +1,60 @@
+const fs = require('fs');
+const path = require('path');
+const ExcelJS = require('exceljs');
+const axios = require('axios');
+
+const inputFolder = './input';
+const outputFolder = './output';
+const outputFileName = 'output.xlsx';
+
+const workbook = new ExcelJS.Workbook();
+const outputWorkbook = new ExcelJS.Workbook();
+
+fs.readdir(inputFolder, (err, files) => {
+  if (err) {
+    console.error(err);
+    return;
+  }
+
+  const promises = [];
+
+  files.forEach((file) => {
+    if (path.extname(file) === '.xlsx') {
+      const promise = workbook.xlsx.readFile(path.join(inputFolder, file))
+        .then(() => {
+          const worksheet = workbook.getWorksheet(1);
+          const questions = [];
+
+          worksheet.eachRow((row) => {
+            questions.push(row.getCell('A').value);
+          });
+
+          return questions;
+        })
+        .then((questions) => {
+          return axios.all(questions.map((question) => {
+            return axios.post('https://example.com/api', { question });
+          }));
+        })
+        .then((responses) => {
+          const outputWorksheet = outputWorkbook.addWorksheet(file);
+          let rowNumber = 1;
+
+          responses.forEach((response) => {
+            outputWorksheet.getCell(`A${rowNumber}`).value = response.data.answer;
+            rowNumber++;
+          });
+        });
+
+      promises.push(promise);
+    }
+  });
+
+  Promise.all(promises)
+    .then(() => {
+      return outputWorkbook.xlsx.writeFile(path.join(outputFolder, outputFileName));
+    })
+    .catch((err) => {
+      console.error(err);
+    });
+});
